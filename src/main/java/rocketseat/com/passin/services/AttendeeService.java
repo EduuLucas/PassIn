@@ -2,11 +2,15 @@ package rocketseat.com.passin.services;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.UriComponentsBuilder;
 import rocketseat.com.passin.domain.attendee.Attendee;
 import rocketseat.com.passin.domain.attendee.exceptions.AttendeeAlreadyRegisteredException;
+import rocketseat.com.passin.domain.attendee.exceptions.AttendeeNotFoundException;
 import rocketseat.com.passin.domain.checkin.CheckIn;
+import rocketseat.com.passin.dto.attendee.AttendeeBadgeDTO;
 import rocketseat.com.passin.dto.attendee.AttendeeDetails;
 import rocketseat.com.passin.dto.attendee.AttendeeListResponseDTO;
+import rocketseat.com.passin.dto.attendee.BadgeDTO;
 import rocketseat.com.passin.repositories.AttendeeRepository;
 import rocketseat.com.passin.repositories.CheckInRepository;
 
@@ -18,7 +22,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class AttendeeService {
     private final AttendeeRepository attendeeRepository;
-    private final CheckInRepository checkInRepository;
+    private final CheckInService checkInService;
 
     public List<Attendee> getAllAttendeesFromEvent(String eventId){
         return this.attendeeRepository.findByEventId(eventId);
@@ -28,7 +32,7 @@ public class AttendeeService {
         List<Attendee> attendeeList = this.getAllAttendeesFromEvent(eventId);
 
         List<AttendeeDetails> attendeeDetailsList = attendeeList.stream().map(attendee -> {
-            Optional<CheckIn> checkIn = this.checkInRepository.findByAttendeeId(attendee.getId());
+            Optional<CheckIn> checkIn = this.checkInService.getCheckIn(attendee.getId());
             LocalDateTime checkedInAt = checkIn.<LocalDateTime>map(CheckIn::getCreatedAt).orElse(null);
             return new AttendeeDetails(attendee.getId(), attendee.getName(), attendee.getEmail(), attendee.getCreatedAt(), checkedInAt);
         }).toList();
@@ -43,5 +47,23 @@ public class AttendeeService {
     public void verifyAttendeeSubscription(String email, String eventId){
         Optional<Attendee> isAttendeeRegistered = this.attendeeRepository.findByEventIdAndEmail(eventId, email);
         if(isAttendeeRegistered.isPresent()) throw new AttendeeAlreadyRegisteredException("attendee is already registered");
+    }
+
+    public AttendeeBadgeDTO getAttendeeBadge(String id, UriComponentsBuilder uriComponentsBuilder){
+        Attendee attendee = getAttendee(id);
+
+        var uri = uriComponentsBuilder.path("/attendees/{attendeeId}/check-in").buildAndExpand(id).toUri();
+
+        BadgeDTO badge = new BadgeDTO(attendee.getName(), attendee.getEmail(), uri.toString(), attendee.getEvent().getId());
+        return new AttendeeBadgeDTO(badge);
+    }
+
+    public void checkInAttendee(String attendeeId){
+        Attendee attendee = getAttendee(attendeeId);
+        this.checkInService.registerCheckIn(attendee);
+    }
+
+    private Attendee getAttendee(String id){
+        return this.attendeeRepository.findById(id).orElseThrow(() -> new AttendeeNotFoundException("attendee not found"));
     }
 }
